@@ -59,16 +59,18 @@ impl SomeStruct {
     }
 }
 
-#[unsafe_fn]
-pub(crate) fn create_vec<T>() -> Vec<T> {
-    let _: u32 = unsafe { std::mem::zeroed() };
-    Vec::new()
-}
+mod some_module {
+    #[unsafe_fn::unsafe_fn]
+    pub(crate) fn create_vec<T>() -> Vec<T> {
+        let _: u32 = unsafe { std::mem::zeroed() };
+        Vec::new()
+    }
 
-#[unsafe_fn]
-pub fn size_plus<T>(x: usize) -> usize {
-    let y: usize = unsafe { std::mem::zeroed() };
-    x + y + std::mem::size_of::<T>()
+    #[unsafe_fn::unsafe_fn]
+    pub fn size_plus<T>(x: usize) -> usize {
+        let y: usize = unsafe { std::mem::zeroed() };
+        x + y + std::mem::size_of::<T>()
+    }
 }
 
 #[unsafe_fn]
@@ -104,14 +106,13 @@ fn main() {
     };
     assert_eq!(s1.i, 9);
     assert_eq!(s2.i, 5 + 9);
-    let _ = unsafe { create_vec::<u32>() };
     assert_eq!(unsafe { s2.i_plus(58) }, 5 + 9 + 58);
     let x = 31;
     assert_eq!(unsafe { s2.with_generic(&x, 5, 8) }, (&x, x, "ABCDEF"));
     assert_eq!(unsafe { s2.take_self() }.i, 5 + 9 + 2);
-    let _ = unsafe { create_vec::<u32>() };
+    let _ = unsafe { some_module::create_vec::<u32>() };
+    assert_eq!(unsafe { some_module::size_plus::<u32>(1) }, 4 + 1);
     assert_eq!(unsafe { deref_ptr(&x) }, 31);
-    assert_eq!(unsafe { size_plus::<u32>(1) }, 4 + 1);
     let mut m = 1;
     unsafe { with_return(&mut m, true) };
     assert_eq!(m, 1 + 4);

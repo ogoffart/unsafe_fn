@@ -28,7 +28,11 @@ pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
         decl,
         block,
     } = parse_macro_input!(item as ItemFn);
-    assert!(unsafety.is_none());
+    if unsafety.is_some() {
+        return Error::new(unsafety.span(), "#[unsafe_fn] already marked unsafe")
+            .to_compile_error()
+            .into();
+    }
     let FnDecl {
         fn_token,
         generics,
@@ -81,7 +85,7 @@ pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let fun = quote! {
         #[doc(hide)]
         #[inline]
-        fn #unsafe_fn_name #impl_generics (#sub_param #variadic) #output #where_clause {
+        #constness #asyncness #fn_token #unsafe_fn_name #impl_generics (#sub_param #variadic) #output #where_clause {
             #block
         }
     };
