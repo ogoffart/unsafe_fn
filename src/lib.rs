@@ -70,7 +70,8 @@
 //!
 //! ## Limitations
 //!
-//! Associated functions of a generic type that reference neither `self` nor `Self`
+//! Due to a restriction in the way procedural macro works, there is a small limitation:
+//! associated functions of a generic type that reference neither `self` nor `Self`
 //! cannot reference any of the generic type.
 //!
 //! ```ignore
@@ -80,9 +81,10 @@
 //!     #[unsafe_fn] // ok: reference self
 //!     fn get(&self) -> &T { &self.0 }
 //!
-//!     // Error! no refernces to 'self' or 'Self', T cannot be used
+//!     // Error! no refernces to 'self' or 'Self', so T cannot be used
 //!     #[unsafe_fn]
 //!     fn identity(x : &T) -> &T { x }
+//! // error[E0401]: can't use generic parameters from outer function
 //! }
 //! ```
 

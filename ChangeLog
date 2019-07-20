@@ -1,0 +1,7 @@
+
+Version 0.1.1
+ * Add #[safe_body]
+ * Fix raw identifier
+ * Support trait methods
+ * Better support of Self
+ * Move the inner function in a function local
