@@ -36,6 +36,20 @@ impl SomeStruct {
         let y : u32 = unsafe { std::mem::zeroed() };
         self.i + plus + y
     }
+
+    #[unsafe_fn]
+    fn with_generic<'a, 'b, T: Clone>(&'a self, r : &'b T, _: u32, _: u32)  -> (&'b T, T, &'a str)
+        where (T, Self) : Default
+    {
+        let _ : u32 = unsafe { std::mem::zeroed() };
+        (r, r.clone(), &self.s)
+    }
+}
+
+#[unsafe_fn]
+fn create_vec<T>() -> Vec<T> {
+    let _ : u32 = unsafe { std::mem::zeroed() };
+    Vec::new()
 }
 
 fn main() {
@@ -47,4 +61,7 @@ fn main() {
     assert_eq!(s2.i, 5+9);
     assert_eq!(s2.s, "ABCDEF");
     assert_eq!(unsafe { s2.i_plus(58) }, 5+9+58);
+    let x = 31;
+    assert_eq!(unsafe { s2.with_generic(&x, 5, 8) }, (&x, x, "ABCDEF"));
+    let _ = unsafe { create_vec::<u32>()  };
 }
