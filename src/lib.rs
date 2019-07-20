@@ -68,11 +68,28 @@
 //! need to be used when reviewing this code. While the attribute `#[unsafe_fn]` merly
 //! declare a function as unsafe, but cannot by itself cause undefined behavior.
 //!
+//! ## Limitations
+//!
+//! Associated functions of a generic type that reference neither `self` nor `Self`
+//! cannot reference any of the generic type.
+//!
+//! ```ignore
+//! # use unsafe_fn::unsafe_fn;
+//! struct X<T>(T);
+//! impl<T> X<T> {
+//!     #[unsafe_fn] // ok: reference self
+//!     fn get(&self) -> &T { &self.0 }
+//!
+//!     // Error! no refernces to 'self' or 'Self', T cannot be used
+//!     #[unsafe_fn]
+//!     fn identity(x : &T) -> &T { x }
+//! }
+//! ```
 
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{ext::IdentExt, fold::Fold, punctuated::Punctuated, spanned::Spanned, *};
+use syn::{ext::IdentExt, fold::Fold, punctuated::Punctuated, spanned::Spanned, visit::Visit, *};
 
 struct RemoveMut;
 impl Fold for RemoveMut {
@@ -83,6 +100,19 @@ impl Fold for RemoveMut {
     fn fold_arg_self(&mut self, mut i: ArgSelf) -> ArgSelf {
         i.mutability = None;
         i
+    }
+}
+
+struct HasSelfType(bool);
+impl<'ast> Visit<'ast> for HasSelfType {
+    fn visit_ident(&mut self, i: &'ast Ident) {
+        if i == "Self" {
+            self.0 = true;
+        }
+    }
+
+    fn visit_item(&mut self, _: &'ast Item) {
+        // Do not recurse in other items
     }
 }
 
@@ -169,7 +199,7 @@ fn unsafe_fn_impl(
         inputs,
         variadic,
         output,
-    } = *decl;
+    } = &*decl;
     let (impl_generics, _, where_clause) = generics.split_for_impl();
 
     let mut main_param = Punctuated::<FnArg, Token!(,)>::new();
@@ -181,7 +211,7 @@ fn unsafe_fn_impl(
         match it {
             FnArg::SelfRef(_) | FnArg::SelfValue(_) => {
                 sub_param.push(it.clone());
-                main_param.push(fold::fold_fn_arg(&mut RemoveMut, it.clone()));
+                main_param.push(RemoveMut.fold_fn_arg(it.clone()));
                 wrap_self = true;
             }
             FnArg::Captured(ArgCaptured {
@@ -190,9 +220,13 @@ fn unsafe_fn_impl(
                 ty,
             }) => {
                 if let Pat::Ident(i) = pat {
-                    main_param.push(fold::fold_fn_arg(&mut RemoveMut, it.clone()));
+                    main_param.push(RemoveMut.fold_fn_arg(it.clone()));
                     sub_param.push(it.clone());
-                    sub_args.push(i.ident.clone());
+                    if i.ident == "self" {
+                        wrap_self = true;
+                    } else {
+                        sub_args.push(i.ident.clone());
+                    }
                 } else {
                     let name = Ident::new(&format!("__unsafe_fn_arg{}", sub_args.len()), it.span());
                     main_param.push(parse(quote!(#name #colon_token #ty).into()).unwrap());
@@ -222,6 +256,11 @@ fn unsafe_fn_impl(
         }
     };
 
+    let fdecl = quote! {
+        #(#attrs)* #vis #constness #asyncness #unsafety #abi
+        #fn_token #ident #impl_generics (#main_param #variadic) #output #where_clause
+    };
+
     let type_params: Vec<_> = generics.type_params().map(|x| &x.ident).collect();
     let turbo = if type_params.is_empty() {
         quote!()
@@ -229,18 +268,32 @@ fn unsafe_fn_impl(
         quote!(::< #(#type_params),* >)
     };
 
-    let ctn = if wrap_self {
-        quote!( self.#unsafe_fn_name #turbo (#sub_args) )
-    } else {
-        quote!( #unsafe_fn_name #turbo (#sub_args) )
-    };
-
-    let r = quote! {
-        #fun
-        #(#attrs)* #vis #constness #asyncness #unsafety #abi
-        #fn_token #ident #impl_generics (#main_param #variadic) #output #where_clause  {
-            #ctn
+    let r = if wrap_self {
+        quote! {
+            #fun
+            #fdecl {
+                self.#unsafe_fn_name #turbo (#sub_args)
+            }
         }
+    } else if {
+        let mut has_self = HasSelfType(false);
+        has_self.visit_fn_decl(&*decl);
+        has_self.visit_block(&block);
+        has_self.0
+    } {
+        quote! {
+            #fun
+            #fdecl {
+                Self::#unsafe_fn_name #turbo (#sub_args)
+            }
+        }
+    } else {
+        quote!(
+            #fdecl {
+                #fun
+                #unsafe_fn_name #turbo (#sub_args)
+            }
+        )
     };
     //println!("{}", r);
     r.into()
