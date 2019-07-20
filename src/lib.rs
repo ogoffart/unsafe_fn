@@ -1,16 +1,7 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
-use syn::{*, punctuated::Punctuated, spanned::Spanned, fold::Fold};
+use syn::{*, punctuated::Punctuated, spanned::Spanned};
 use quote::quote;
-
-const SELF_NAME : &'static str = "unsafe_fn_self";
-
-struct ReplaceSelf;
-impl Fold for ReplaceSelf {
-    fn fold_ident(&mut self, i: Ident) -> Ident {
-        if i == "self" { Ident::new(SELF_NAME, i.span()) } else { i }
-    }
-}
 
 #[proc_macro_attribute]
 pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -23,20 +14,16 @@ pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut main_param = Punctuated::<FnArg, Token!(,)>::new();
     let mut sub_param = Punctuated::<FnArg, Token!(,)>::new();
     let mut sub_args = Punctuated::<Ident, Token!(,)>::new();
-    let mut wrap_in_trait = false;
+    let mut wrap_self = false;
 
     for x in inputs.pairs() {
         let (it, sep) = x.into_tuple();
         match it {
-            FnArg::SelfRef(syn::ArgSelfRef{ and_token, lifetime, mutability, self_token}) => {
-                let name = Ident::new(SELF_NAME, self_token.span());
-                sub_param.push(parse(
-                    quote!(#name : #and_token #lifetime #mutability Self).into()).unwrap());
+            FnArg::SelfRef(_) |
+            FnArg::SelfValue(_) => {
+                sub_param.push(it.clone());
                 main_param.push(it.clone());
-                sub_args.push(self_token.clone().into());
-            }
-            FnArg::SelfValue(a) => {
-                unimplemented!();
+                wrap_self = true;
             }
             FnArg::Captured(ArgCaptured{ pat, colon_token, ty }) => {
                 if let Pat::Ident(i) = pat {
@@ -59,15 +46,28 @@ pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
 
-    let block = fold::fold_block(&mut ReplaceSelf, *block);
+    //let block = fold::fold_block(&mut ReplaceSelf, *block);
+    let unsafe_fn_name = Ident::new(&format!("__unsafe_fn_{}", ident.to_string()), ident.span() );
+
+    let mut fun = quote!{
+        #[doc(hide)]
+        #[inline]
+        fn #unsafe_fn_name #impl_generics (#sub_param #variadic) #output #where_clause {
+            #block
+        }
+    };
+
+    let ctn = if wrap_self {
+        quote!( self.#unsafe_fn_name(#sub_args) )
+    } else {
+        quote!( #unsafe_fn_name(#sub_args) )
+    };
 
     let r = quote!{
+        #fun
         #(#attrs)* #vis #constness #asyncness unsafe #abi
         #fn_token #ident #impl_generics (#main_param #variadic) #output #where_clause  {
-            #[inline] fn __unsafe_fn #impl_generics (#sub_param #variadic) #output #where_clause {
-                #block
-            }
-            __unsafe_fn(#sub_args)
+            #ctn
         }
     };
     println!("-> {}", r);
