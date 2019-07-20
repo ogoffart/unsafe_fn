@@ -1,0 +1,12 @@
+[package]
+name = "unsafe_fn"
+version = "0.1.0"
+authors = ["Olivier Goffart <ogoffart@woboq.com>"]
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "0.15.39", features = ["full"] }
+quote = "0.6"
