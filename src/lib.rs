@@ -1,7 +1,19 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{punctuated::Punctuated, spanned::Spanned, *};
+use syn::{fold::Fold, punctuated::Punctuated, spanned::Spanned, *};
+
+struct RemoveMut;
+impl Fold for RemoveMut {
+    fn fold_pat_ident(&mut self, mut i: PatIdent) -> PatIdent {
+        i.mutability = None;
+        i
+    }
+    fn fold_arg_self(&mut self, mut i: ArgSelf) -> ArgSelf {
+        i.mutability = None;
+        i
+    }
+}
 
 #[proc_macro_attribute]
 pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -20,7 +32,7 @@ pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let FnDecl {
         fn_token,
         generics,
-        paren_token: _,
+        paren_token: _paren_token,
         inputs,
         variadic,
         output,
@@ -32,12 +44,11 @@ pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut sub_args = Punctuated::<Ident, Token!(,)>::new();
     let mut wrap_self = false;
 
-    for x in inputs.pairs() {
-        let (it, sep) = x.into_tuple();
+    for it in inputs.iter() {
         match it {
             FnArg::SelfRef(_) | FnArg::SelfValue(_) => {
                 sub_param.push(it.clone());
-                main_param.push(it.clone());
+                main_param.push(fold::fold_fn_arg(&mut RemoveMut, it.clone()));
                 wrap_self = true;
             }
             FnArg::Captured(ArgCaptured {
@@ -46,12 +57,11 @@ pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 ty,
             }) => {
                 if let Pat::Ident(i) = pat {
-                    main_param.push(it.clone());
+                    main_param.push(fold::fold_fn_arg(&mut RemoveMut, it.clone()));
                     sub_param.push(it.clone());
                     sub_args.push(i.ident.clone());
                 } else {
-                    let name =
-                        Ident::new(&format!("__unsafe_fn_arg{}", sub_args.len()), sep.span());
+                    let name = Ident::new(&format!("__unsafe_fn_arg{}", sub_args.len()), it.span());
                     main_param.push(parse(quote!(#name #colon_token #ty).into()).unwrap());
                     sub_param.push(it.clone());
                     sub_args.push(name);
@@ -96,6 +106,6 @@ pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #ctn
         }
     };
-    println!("{}", r);
+    //println!("{}", r);
     r.into()
 }
