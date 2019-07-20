@@ -1,4 +1,4 @@
-//! Attribute macro to mak a function as unsafe without its body
+//! Attribute macro to mark a function as unsafe without its body
 //! being unsafe
 //!
 //! Marking a function with the `unsafe` keywords does two things:

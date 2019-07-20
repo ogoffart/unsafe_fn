@@ -1,11 +1,18 @@
 [package]
 name = "unsafe_fn"
 version = "0.1.0"
-authors = ["Olivier Goffart <ogoffart@woboq.com>"]
 edition = "2018"
+authors = ["Olivier Goffart <ogoffart@woboq.com>"]
+description = "macro to mark a function as unsafe without its body being unsafe"
+readme = "README.md"
+license = "MIT"
+keywords = ["unsafe", "macro"]
+repository = "https://github.com/ogoffart/unsafe_fn"
+documentation = "https://docs.rs/unsafe_fn"
 
 [lib]
 proc-macro = true
+path = "src/lib.rs"
 
 [dependencies]
 syn = { version = "0.15.39", features = ["full", "fold"] }
