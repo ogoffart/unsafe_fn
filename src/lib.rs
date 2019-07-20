@@ -76,10 +76,17 @@ pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    let ctn = if wrap_self {
-        quote!( self.#unsafe_fn_name(#sub_args) )
+    let type_params: Vec<_> = generics.type_params().map(|x| &x.ident).collect();
+    let turbo = if type_params.is_empty() {
+        quote!()
     } else {
-        quote!( #unsafe_fn_name(#sub_args) )
+        quote!(::< #(#type_params),* >)
+    };
+
+    let ctn = if wrap_self {
+        quote!( self.#unsafe_fn_name #turbo (#sub_args) )
+    } else {
+        quote!( #unsafe_fn_name #turbo (#sub_args) )
     };
 
     let r = quote! {
@@ -89,5 +96,6 @@ pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #ctn
         }
     };
+    println!("{}", r);
     r.into()
 }

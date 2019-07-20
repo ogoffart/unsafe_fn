@@ -56,6 +56,18 @@ fn create_vec<T>() -> Vec<T> {
     Vec::new()
 }
 
+#[unsafe_fn]
+fn size_plus<T>(x: usize) -> usize {
+    let y: usize = unsafe { std::mem::zeroed() };
+    x + y + std::mem::size_of::<T>()
+}
+
+#[unsafe_fn]
+#[no_mangle]
+extern "C" fn deref_ptr(ptr: *const u32) -> u32 {
+    unsafe { *ptr }
+}
+
 fn main() {
     assert_eq!(unsafe { hello(42, "XYZ".into()) }, 42 + 3);
     assert_eq!(unsafe { plus_one(42, "XYZ".into()) }, 42 + 1);
@@ -74,9 +86,11 @@ fn main() {
     };
     assert_eq!(s1.i, 9);
     assert_eq!(s2.i, 5 + 9);
-    assert_eq!(s2.s, "ABCDEF");
+    let _ = unsafe { create_vec::<u32>() };
     assert_eq!(unsafe { s2.i_plus(58) }, 5 + 9 + 58);
     let x = 31;
     assert_eq!(unsafe { s2.with_generic(&x, 5, 8) }, (&x, x, "ABCDEF"));
     let _ = unsafe { create_vec::<u32>() };
+    assert_eq!(unsafe { deref_ptr(&x) }, 31);
+    assert_eq!(unsafe { size_plus::<u32>(1) }, 4 + 1);
 }
