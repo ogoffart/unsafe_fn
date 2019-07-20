@@ -72,7 +72,7 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{fold::Fold, punctuated::Punctuated, spanned::Spanned, *};
+use syn::{ext::IdentExt, fold::Fold, punctuated::Punctuated, spanned::Spanned, *};
 
 struct RemoveMut;
 impl Fold for RemoveMut {
@@ -209,7 +209,10 @@ fn unsafe_fn_impl(
         }
     }
 
-    let unsafe_fn_name = Ident::new(&format!("__unsafe_fn_{}", ident.to_string()), ident.span());
+    let unsafe_fn_name = Ident::new(
+        &format!("__unsafe_fn_{}", ident.unraw().to_string()),
+        ident.span(),
+    );
 
     let fun = quote! {
         #[doc(hide)]
