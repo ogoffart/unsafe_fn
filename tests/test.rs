@@ -88,6 +88,11 @@ fn with_return(x: &mut u32, cond: bool) {
     *x += 8;
 }
 
+#[unsafe_fn]
+trait Marker {}
+
+unsafe impl Marker for SomeStruct {}
+
 fn main() {
     assert_eq!(unsafe { hello(42, "XYZ".into()) }, 42 + 3);
     assert_eq!(unsafe { plus_one(42, "XYZ".into()) }, 42 + 1);

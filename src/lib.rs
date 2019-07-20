@@ -31,6 +31,14 @@
 //! assert_eq!(unsafe { add_to_ptr(x, 1) }, 43);
 //! ```
 //!
+//! For consistency, it is also possible to use the `unsafe_fn` on traits
+//! to declare an unsafe trait
+//! ```rust
+//! # use unsafe_fn::unsafe_fn;
+//! // Equivalent to `unsafe trait UnsafeMarker {}`
+//! #[unsafe_fn] trait UnsafeMarker {}
+//! ```
+//!
 //! ## Rationale
 //!
 //! From the motivation section of
@@ -83,7 +91,21 @@ impl Fold for RemoveMut {
 /// See [crate documentation](index.html)
 #[proc_macro_attribute]
 pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let ItemFn {
+    let item = parse_macro_input!(item as Item);
+    match item {
+        Item::Fn(f) => unsafe_fn_impl(f),
+        Item::Trait(t) => quote!(unsafe #t).into(),
+        _ => Error::new(
+            item.span(),
+            "#[unsafe_fn] can only be applied to functions or traits",
+        )
+        .to_compile_error()
+        .into(),
+    }
+}
+
+fn unsafe_fn_impl(
+    ItemFn {
         attrs,
         vis,
         constness,
@@ -93,7 +115,8 @@ pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
         ident,
         decl,
         block,
-    } = parse_macro_input!(item as ItemFn);
+    }: ItemFn,
+) -> TokenStream {
     if unsafety.is_some() {
         return Error::new(unsafety.span(), "#[unsafe_fn] already marked unsafe")
             .to_compile_error()
