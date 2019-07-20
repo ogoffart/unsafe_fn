@@ -86,6 +86,11 @@ impl Fold for RemoveMut {
     }
 }
 
+enum Kind {
+    UnsafeFn,
+    SafeBody,
+}
+
 /// Mark a function as unsafe without its body being in an unsafe block
 ///
 /// See [crate documentation](index.html)
@@ -93,7 +98,7 @@ impl Fold for RemoveMut {
 pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as Item);
     match item {
-        Item::Fn(f) => unsafe_fn_impl(f),
+        Item::Fn(f) => unsafe_fn_impl(f, Kind::UnsafeFn),
         Item::Trait(t) => quote!(unsafe #t).into(),
         _ => Error::new(
             item.span(),
@@ -102,6 +107,27 @@ pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
         .to_compile_error()
         .into(),
     }
+}
+
+/// Make the body of an unsafe function not allowed to call unsafe code without
+/// adding unsafe blocks
+///
+/// This macro can be applied to a unsafe function so that its body is not
+/// considered as an unsafe block
+///
+/// ```rust
+/// use unsafe_fn::safe_body;
+///
+/// #[safe_body]
+/// unsafe fn add_to_ptr(a_ptr: *const i32, b: i32) -> i32 {
+///     let a = unsafe { *a_ptr }; // dereference in a unsafe block
+///     a + b // safe code outside of the unsafe block
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn safe_body(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(item as ItemFn);
+    unsafe_fn_impl(item, Kind::SafeBody)
 }
 
 fn unsafe_fn_impl(
@@ -116,12 +142,26 @@ fn unsafe_fn_impl(
         decl,
         block,
     }: ItemFn,
+    k: Kind,
 ) -> TokenStream {
-    if unsafety.is_some() {
-        return Error::new(unsafety.span(), "#[unsafe_fn] already marked unsafe")
+    let unsafety = match (k, unsafety) {
+        (Kind::UnsafeFn, None) => <Token![unsafe]>::default(),
+        (Kind::SafeBody, Some(u)) => u,
+        (Kind::UnsafeFn, Some(u)) => {
+            return Error::new(u.span(), "#[unsafe_fn] already marked unsafe")
+                .to_compile_error()
+                .into()
+        }
+        (Kind::SafeBody, None) => {
+            return Error::new(
+                proc_macro::Span::call_site().into(),
+                "#[safe_body] function must be marked as unsafe",
+            )
             .to_compile_error()
-            .into();
-    }
+            .into()
+        }
+    };
+
     let FnDecl {
         fn_token,
         generics,
@@ -194,7 +234,7 @@ fn unsafe_fn_impl(
 
     let r = quote! {
         #fun
-        #(#attrs)* #vis #constness #asyncness unsafe #abi
+        #(#attrs)* #vis #constness #asyncness #unsafety #abi
         #fn_token #ident #impl_generics (#main_param #variadic) #output #where_clause  {
             #ctn
         }

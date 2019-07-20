@@ -1,6 +1,6 @@
 #![deny(unused_unsafe)]
 
-use unsafe_fn::unsafe_fn;
+use unsafe_fn::{safe_body, unsafe_fn};
 
 #[derive(Default)]
 struct SomeStruct {
@@ -93,7 +93,8 @@ trait Marker {}
 
 unsafe impl Marker for SomeStruct {}
 
-fn main() {
+#[test]
+fn test_unsafe_fn1() {
     assert_eq!(unsafe { hello(42, "XYZ".into()) }, 42 + 3);
     assert_eq!(unsafe { plus_one(42, "XYZ".into()) }, 42 + 1);
     let mut s1 = SomeStruct {
@@ -121,4 +122,16 @@ fn main() {
     let mut m = 1;
     unsafe { with_return(&mut m, true) };
     assert_eq!(m, 1 + 4);
+}
+
+#[test]
+fn test_safe_body1() {
+    #[safe_body]
+    unsafe fn some_func((x, mut y): (u32, u32)) -> u32 {
+        let z: u32 = unsafe { std::mem::zeroed() };
+        y += z;
+        x + y
+    }
+
+    assert_eq!(unsafe { some_func((4, 3)) }, 4 + 3);
 }
