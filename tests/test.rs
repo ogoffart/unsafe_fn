@@ -203,3 +203,12 @@ fn raw_identifier() {
     }
     assert_eq!(unsafe { r#unsafe(5) }, 5);
 }
+
+trait SomeTrait {
+    #[unsafe_fn]
+    fn foo(&self) -> u32;
+    #[unsafe_fn]
+    fn bar(&self) -> u32 {
+        unsafe { self.foo() }
+    }
+}

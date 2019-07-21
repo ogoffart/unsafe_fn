@@ -121,14 +121,65 @@ enum Kind {
     SafeBody,
 }
 
+struct FnOrMethod {
+    attrs: Vec<Attribute>,
+    vis: Visibility,
+    constness: Option<token::Const>,
+    asyncness: Option<token::Async>,
+    unsafety: Option<token::Unsafe>,
+    abi: Option<Abi>,
+    ident: Ident,
+    decl: FnDecl,
+    block: Option<Block>,
+    semi_token: Option<token::Semi>,
+}
+
+impl From<ItemFn> for FnOrMethod {
+    fn from(itemfn: ItemFn) -> FnOrMethod {
+        FnOrMethod {
+            attrs: itemfn.attrs,
+            vis: itemfn.vis,
+            constness: itemfn.constness,
+            asyncness: itemfn.asyncness,
+            unsafety: itemfn.unsafety,
+            abi: itemfn.abi,
+            ident: itemfn.ident,
+            decl: *itemfn.decl,
+            block: Some(*itemfn.block),
+            semi_token: None,
+        }
+    }
+}
+
+impl From<TraitItemMethod> for FnOrMethod {
+    fn from(m: TraitItemMethod) -> FnOrMethod {
+        FnOrMethod {
+            attrs: m.attrs,
+            vis: Visibility::Inherited,
+            constness: m.sig.constness,
+            asyncness: None,
+            unsafety: m.sig.unsafety,
+            abi: m.sig.abi,
+            ident: m.sig.ident,
+            decl: m.sig.decl,
+            block: m.default,
+            semi_token: m.semi_token,
+        }
+    }
+}
+
 /// Mark a function as unsafe without its body being in an unsafe block
 ///
 /// See [crate documentation](index.html)
 #[proc_macro_attribute]
 pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    if let Ok(m) = parse::<TraitItemMethod>(item.clone()) {
+        return unsafe_fn_impl(m.into(), Kind::UnsafeFn);
+    }
+
     let item = parse_macro_input!(item as Item);
     match item {
-        Item::Fn(f) => unsafe_fn_impl(f, Kind::UnsafeFn),
+        Item::Fn(f) => unsafe_fn_impl(f.into(), Kind::UnsafeFn),
         Item::Trait(t) => quote!(unsafe #t).into(),
         _ => Error::new(
             item.span(),
@@ -156,12 +207,15 @@ pub fn unsafe_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro_attribute]
 pub fn safe_body(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    if let Ok(m) = parse::<TraitItemMethod>(item.clone()) {
+        return unsafe_fn_impl(m.into(), Kind::SafeBody);
+    }
     let item = parse_macro_input!(item as ItemFn);
-    unsafe_fn_impl(item, Kind::SafeBody)
+    unsafe_fn_impl(item.into(), Kind::SafeBody)
 }
 
 fn unsafe_fn_impl(
-    ItemFn {
+    FnOrMethod {
         attrs,
         vis,
         constness,
@@ -171,7 +225,8 @@ fn unsafe_fn_impl(
         ident,
         decl,
         block,
-    }: ItemFn,
+        semi_token,
+    }: FnOrMethod,
     k: Kind,
 ) -> TokenStream {
     let unsafety = match (k, unsafety) {
@@ -199,8 +254,21 @@ fn unsafe_fn_impl(
         inputs,
         variadic,
         output,
-    } = &*decl;
+    } = &decl;
     let (impl_generics, _, where_clause) = generics.split_for_impl();
+
+    let block = match block {
+        None => {
+            // trait method, not much to do
+            return quote!(
+                #(#attrs)* #vis #constness #asyncness #unsafety #abi
+                #fn_token #ident #impl_generics (#inputs #variadic) #output #where_clause
+                 #semi_token
+            )
+            .into();
+        }
+        Some(block) => block,
+    };
 
     let mut main_param = Punctuated::<FnArg, Token!(,)>::new();
     let mut sub_param = Punctuated::<FnArg, Token!(,)>::new();
@@ -277,7 +345,7 @@ fn unsafe_fn_impl(
         }
     } else if {
         let mut has_self = HasSelfType(false);
-        has_self.visit_fn_decl(&*decl);
+        has_self.visit_fn_decl(&decl);
         has_self.visit_block(&block);
         has_self.0
     } {
