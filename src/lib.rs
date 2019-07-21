@@ -70,8 +70,9 @@
 //!
 //! ## Limitations
 //!
-//! Due to a restriction in the way procedural macro works, there is a small limitation:
-//! associated functions of a generic type that reference neither `self` nor `Self`
+//! Due to a restriction in the way procedural macro works, there are a small limitation:
+//!
+//!  1. associated functions of a generic type that reference neither `self` nor `Self`
 //! cannot reference any of the generic type.
 //!
 //! ```ignore
@@ -85,6 +86,22 @@
 //!     #[unsafe_fn]
 //!     fn identity(x : &T) -> &T { x }
 //! // error[E0401]: can't use generic parameters from outer function
+//! }
+//! ```
+//!
+//!  2. Within trait implementation this only work if the trait function was also marked
+//!  with #[unsafe_fn]
+//!
+//! ```ignore
+//! # use unsafe_fn::unsafe_fn;
+//! trait Tr {
+//!     #[unsafe_fn] fn fn1(&self);
+//!     unsafe fn fn2(&self);
+//! }
+//! impl Tr for u32 {
+//!     #[unsafe_fn] fn fn1(&self) {} // Ok
+//!     #[unsafe_fn] fn fn2(&self) {} // Error: fn2 is not declared with #[unsafe_fn]
+//! // error[E0407]: method `__unsafe_fn_fn2` is not a member of trait `Tr`
 //! }
 //! ```
 
@@ -259,13 +276,25 @@ fn unsafe_fn_impl(
     } = &decl;
     let (impl_generics, _, where_clause) = generics.split_for_impl();
 
+    let unsafe_fn_name = Ident::new(
+        &format!("__unsafe_fn_{}", ident.unraw().to_string()),
+        ident.span(),
+    );
+
     let block = match block {
         None => {
-            // trait method, not much to do
+            // Trait method, just mark it as unsafe, but also create a dummy placeholder
+            // function next to it so re-implementaiton works
             return quote!(
                 #(#attrs)* #vis #constness #asyncness #unsafety #abi
                 #fn_token #ident #impl_generics (#inputs #variadic) #output #where_clause
-                 #semi_token
+                #semi_token
+
+                #[doc(hide)]
+                #[inline]
+                #constness #asyncness
+                #fn_token #unsafe_fn_name #impl_generics (#inputs #variadic) #output #where_clause
+                { ::std::panic!("Not to be called"); }
             )
             .into();
         }
@@ -312,11 +341,6 @@ fn unsafe_fn_impl(
             }
         }
     }
-
-    let unsafe_fn_name = Ident::new(
-        &format!("__unsafe_fn_{}", ident.unraw().to_string()),
-        ident.span(),
-    );
 
     let fun = quote! {
         #[doc(hide)]

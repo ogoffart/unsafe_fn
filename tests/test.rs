@@ -212,3 +212,15 @@ trait SomeTrait {
         unsafe { self.foo() }
     }
 }
+
+impl SomeTrait for u32 {
+    #[unsafe_fn]
+    fn foo(&self) -> u32 {
+        let _: u32 = unsafe { std::mem::zeroed() };
+        *self
+    }
+    #[unsafe_fn]
+    fn bar(&self) -> u32 {
+        unsafe { self.foo() + 2 }
+    }
+}

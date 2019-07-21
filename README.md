@@ -71,8 +71,9 @@ declare a function as unsafe, but cannot by itself cause undefined behavior.
 
 ### Limitations
 
-Due to a restriction in the way procedural macro works, there is a small limitation:
-associated functions of a generic type that reference neither `self` nor `Self`
+Due to a restriction in the way procedural macro works, there are a small limitation:
+
+ 1. associated functions of a generic type that reference neither `self` nor `Self`
 cannot reference any of the generic type.
 
 ```rust
@@ -85,6 +86,21 @@ impl<T> X<T> {
     #[unsafe_fn]
     fn identity(x : &T) -> &T { x }
 // error[E0401]: can't use generic parameters from outer function
+}
+```
+
+ 2. Within trait implementation this only work if the trait function was also marked
+ with #[unsafe_fn]
+
+```rust
+trait Tr {
+    #[unsafe_fn] fn fn1(&self);
+    unsafe fn fn2(&self);
+}
+impl Tr for u32 {
+    #[unsafe_fn] fn fn1(&self) {} // Ok
+    #[unsafe_fn] fn fn2(&self) {} // Error: fn2 is not declared with #[unsafe_fn]
+// error[E0407]: method `__unsafe_fn_fn2` is not a member of trait `Tr`
 }
 ```
 
