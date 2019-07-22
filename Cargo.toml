@@ -1,6 +1,6 @@
 [package]
 name = "unsafe_fn"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2018"
 authors = ["Olivier Goffart <ogoffart@woboq.com>"]
 description = "macro to mark a function as unsafe without its body being unsafe"
