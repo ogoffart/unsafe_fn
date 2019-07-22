@@ -285,6 +285,11 @@ fn unsafe_fn_impl(
         None => {
             // Trait method, just mark it as unsafe, but also create a dummy placeholder
             // function next to it so re-implementaiton works
+            let inner_where = match &where_clause {
+                Some(w) => quote!(#w, Self:Sized),
+                None => quote!(where Self:Sized),
+            };
+
             return quote!(
                 #(#attrs)* #vis #constness #asyncness #unsafety #abi
                 #fn_token #ident #impl_generics (#inputs #variadic) #output #where_clause
@@ -293,7 +298,7 @@ fn unsafe_fn_impl(
                 #[doc(hide)]
                 #[inline]
                 #constness #asyncness
-                #fn_token #unsafe_fn_name #impl_generics (#inputs #variadic) #output #where_clause
+                #fn_token #unsafe_fn_name #impl_generics (#inputs #variadic) #output #inner_where
                 { ::std::panic!("Not to be called"); }
             )
             .into();

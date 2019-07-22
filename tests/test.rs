@@ -211,6 +211,11 @@ trait SomeTrait {
     fn bar(&self) -> u32 {
         unsafe { self.foo() }
     }
+
+    #[unsafe_fn]
+    fn generic<Q>(&self) -> Q
+    where
+        Q: Default;
 }
 
 impl SomeTrait for u32 {
@@ -222,5 +227,13 @@ impl SomeTrait for u32 {
     #[unsafe_fn]
     fn bar(&self) -> u32 {
         unsafe { self.foo() + 2 }
+    }
+
+    #[unsafe_fn]
+    fn generic<R>(&self) -> R
+    where
+        R: Default,
+    {
+        R::default()
     }
 }
