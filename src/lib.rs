@@ -107,8 +107,8 @@
 
 extern crate proc_macro;
 use proc_macro::TokenStream;
-use quote::quote;
-use syn::{ext::IdentExt, fold::Fold, punctuated::Punctuated, spanned::Spanned, visit::Visit, *};
+use quote::{format_ident, quote};
+use syn::{fold::Fold, punctuated::Punctuated, spanned::Spanned, visit::Visit, *};
 
 struct RemoveMut;
 impl Fold for RemoveMut {
@@ -116,7 +116,7 @@ impl Fold for RemoveMut {
         i.mutability = None;
         i
     }
-    fn fold_arg_self(&mut self, mut i: ArgSelf) -> ArgSelf {
+    fn fold_receiver(&mut self, mut i: Receiver) -> Receiver {
         i.mutability = None;
         i
     }
@@ -143,12 +143,7 @@ enum Kind {
 struct FnOrMethod {
     attrs: Vec<Attribute>,
     vis: Visibility,
-    constness: Option<token::Const>,
-    asyncness: Option<token::Async>,
-    unsafety: Option<token::Unsafe>,
-    abi: Option<Abi>,
-    ident: Ident,
-    decl: FnDecl,
+    sig: Signature,
     block: Option<Block>,
     semi_token: Option<token::Semi>,
 }
@@ -158,12 +153,7 @@ impl From<ItemFn> for FnOrMethod {
         FnOrMethod {
             attrs: itemfn.attrs,
             vis: itemfn.vis,
-            constness: itemfn.constness,
-            asyncness: itemfn.asyncness,
-            unsafety: itemfn.unsafety,
-            abi: itemfn.abi,
-            ident: itemfn.ident,
-            decl: *itemfn.decl,
+            sig: itemfn.sig,
             block: Some(*itemfn.block),
             semi_token: None,
         }
@@ -175,12 +165,7 @@ impl From<TraitItemMethod> for FnOrMethod {
         FnOrMethod {
             attrs: m.attrs,
             vis: Visibility::Inherited,
-            constness: m.sig.constness,
-            asyncness: None,
-            unsafety: m.sig.unsafety,
-            abi: m.sig.abi,
-            ident: m.sig.ident,
-            decl: m.sig.decl,
+            sig: m.sig,
             block: m.default,
             semi_token: m.semi_token,
         }
@@ -237,20 +222,29 @@ fn unsafe_fn_impl(
     FnOrMethod {
         attrs,
         vis,
-        constness,
-        asyncness,
-        unsafety,
-        abi,
-        ident,
-        decl,
+        sig,
         block,
         semi_token,
     }: FnOrMethod,
     k: Kind,
 ) -> TokenStream {
+    let Signature {
+        constness,
+        asyncness,
+        unsafety,
+        abi,
+        fn_token,
+        ident,
+        generics,
+        paren_token: _paren_token,
+        inputs,
+        variadic,
+        output,
+    } = &sig;
+
     let unsafety = match (k, unsafety) {
         (Kind::UnsafeFn, None) => <Token![unsafe]>::default(),
-        (Kind::SafeBody, Some(u)) => u,
+        (Kind::SafeBody, Some(u)) => u.clone(),
         (Kind::UnsafeFn, Some(u)) => {
             return Error::new(u.span(), "#[unsafe_fn] already marked unsafe")
                 .to_compile_error()
@@ -266,20 +260,9 @@ fn unsafe_fn_impl(
         }
     };
 
-    let FnDecl {
-        fn_token,
-        generics,
-        paren_token: _paren_token,
-        inputs,
-        variadic,
-        output,
-    } = &decl;
     let (impl_generics, _, where_clause) = generics.split_for_impl();
 
-    let unsafe_fn_name = Ident::new(
-        &format!("__unsafe_fn_{}", ident.unraw().to_string()),
-        ident.span(),
-    );
+    let unsafe_fn_name = format_ident!("__unsafe_fn_{}", ident);
 
     let block = match block {
         None => {
@@ -313,17 +296,18 @@ fn unsafe_fn_impl(
 
     for it in inputs.iter() {
         match it {
-            FnArg::SelfRef(_) | FnArg::SelfValue(_) => {
+            FnArg::Receiver(_) => {
                 sub_param.push(it.clone());
                 main_param.push(RemoveMut.fold_fn_arg(it.clone()));
                 wrap_self = true;
             }
-            FnArg::Captured(ArgCaptured {
+            FnArg::Typed(PatType {
+                attrs,
                 pat,
                 colon_token,
                 ty,
             }) => {
-                if let Pat::Ident(i) = pat {
+                if let Pat::Ident(i) = pat.as_ref() {
                     main_param.push(RemoveMut.fold_fn_arg(it.clone()));
                     sub_param.push(it.clone());
                     if i.ident == "self" {
@@ -332,17 +316,12 @@ fn unsafe_fn_impl(
                         sub_args.push(i.ident.clone());
                     }
                 } else {
-                    let name = Ident::new(&format!("__unsafe_fn_arg{}", sub_args.len()), it.span());
-                    main_param.push(parse(quote!(#name #colon_token #ty).into()).unwrap());
+                    let name = format_ident!("__unsafe_fn_arg{}", sub_args.len());
+                    main_param
+                        .push(parse(quote!(#(#attrs)$* #name #colon_token #ty).into()).unwrap());
                     sub_param.push(it.clone());
                     sub_args.push(name);
                 }
-            }
-            FnArg::Inferred(_) => {
-                unimplemented!();
-            }
-            FnArg::Ignored(_) => {
-                main_param.push(it.clone());
             }
         }
     }
@@ -376,7 +355,7 @@ fn unsafe_fn_impl(
         }
     } else if {
         let mut has_self = HasSelfType(false);
-        has_self.visit_fn_decl(&decl);
+        has_self.visit_signature(&sig);
         has_self.visit_block(&block);
         has_self.0
     } {
