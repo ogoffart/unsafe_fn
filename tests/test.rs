@@ -199,7 +199,7 @@ fn test_safe_body1() {
 fn raw_identifier() {
     #[unsafe_fn]
     fn r#unsafe(r#u32: u32) -> u32 {
-        return r#u32;
+        r#u32
     }
     assert_eq!(unsafe { r#unsafe(5) }, 5);
 }
